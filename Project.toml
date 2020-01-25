@@ -1,0 +1,4 @@
+name = "GaussianInterpolation"
+uuid = "33a97e29-2aed-42d1-9246-239e55de30c9"
+authors = ["Cail Daley <cailmd2@illinois.edu>"]
+version = "0.1.0"

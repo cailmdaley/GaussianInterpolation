@@ -2,3 +2,17 @@ name = "GaussianInterpolation"
 uuid = "33a97e29-2aed-42d1-9246-239e55de30c9"
 authors = ["Cail Daley <cailmd2@illinois.edu>"]
 version = "0.1.0"
+
+[deps]
+CMB = "592991c5-7c29-5f04-aea2-6d9f924ef2a1"
+CMBLensing = "b60c06c0-7e54-11e8-3788-4bd722d65317"
+Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"

@@ -1,25 +1,33 @@
 module GaussianInterpolation
 
-using Reexport
-@reexport using CMBLensing
-@reexport using Unitful, UnitfulAstro
+using CMBLensing
+using CMBLensing: Pix
 
 using CMB: Pl
-using Distances: pairwise, Euclidean, Haversine, Metric
+using Distributions: MvNormal
+using Distances: Metric, Euclidean, Haversine, pairwise!
+using FFTW
 using ImageFiltering
-using Interpolations: interpolate, Linear, BSpline, ScaledInterpolation, scale
+using Interpolations
 using LinearAlgebra
+using Match
 using NearestNeighbors: KDTree, knn
+using OffsetArrays
 using ProgressMeter
+using Parameters
 using Statistics
+using StaticArrays
+import Statistics: cov
+import Base: |, eltype, getindex, +, -, *, length, similar, parent, iterate, show, eachindex
 
-export InterpolatedCovariance
-export interp_flexible, interp_imfilter, interp_knn
-export coords
-export gp_mean, gp_var
+export @unpack
 
 include("coordinates.jl")
-include("covariance.jl")
+include("kernel.jl")
+include("gp.jl")
+include("models.jl")
+include("predict.jl")
+include("design.jl")
 include("interpolation.jl")
 
 end

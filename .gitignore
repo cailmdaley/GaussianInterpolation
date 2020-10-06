@@ -24,3 +24,6 @@ docs/site/
 Manifest.toml
 
 .ipynb_checkpoints
+.vscode
+test/*.json
+trashcan.jl

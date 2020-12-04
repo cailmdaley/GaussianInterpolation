@@ -12,8 +12,11 @@ using StaticArrays
 using SparseArrays
 import Statistics: cov
 import Base: |, eltype, getindex, +, -, *, length, similar, parent, iterate, show, eachindex
+using LinearAlgebra
+using PositiveFactorizations
 
 export @unpack
+export coords
 
 axes_centered(A) = Tuple((ax .- offset for (ax, offset) in zip(axes(A), size(A) .÷ 2 .+ 1)))
 	
@@ -37,10 +40,19 @@ function cov!(out::AbstractVector, Kitp, X)
     end
     out
 end
-function cov!(out::AbstractMatrix, Kitp, X)
-    M = size(out)[1]
-    for i in 1:M, j in 1:M
-        out[j, i] = Kitp(X[i, 1] - X[j, 1], X[i, 2] - X[j, 2])
+function cov!(out::AbstractMatrix, Kitp, X, Y=X)
+    @assert size(out) == @. first(size((X, Y)))
+    ni, nj = size(out)
+    for j in 1:nj, i in 1:ni
+        out[i,j] = Kitp(X[i, 1] - Y[j, 1], X[i, 2] - Y[j, 2])
+    end
+    out
+end	
+function cov!(out::Symmetric, Kitp, X)
+    n = first(size(X))
+    @assert all(n .== size(out))
+    for j in 1:n, i in 1:j,
+        out.data[i,j] = Kitp(X[i, 1] - X[j, 1], X[i, 2] - X[j, 2])
     end
     out
 end	
@@ -50,7 +62,12 @@ end
 export make_kernel, make_mask
 make_kernel(L::LinOp) = make_kernel(diag(L))
 make_kernel(f::FlatFourier) = make_kernel(fftshift(Map(f).Ix))
-make_kernel(m::Matrix) = CubicSplineInterpolation(axes_centered(m), m, extrapolation_bc=0.0)
+make_kernel(m::Matrix) = CubicSplineInterpolation(axes_centered(m), m, extrapolation_bc=NaN)
+# make_kernel(m::Matrix) = LinearInterpolation(axes_centered(m), m, extrapolation_bc=0.0)
+
+function parse_predict(predict::Tuple) 
+	Tuple((p isa Symbol ? p => p : p) for p in predict)
+end
 function kernel_dict(C::LinOp, predict::NTuple) 
     names = (Symbol(p...) for p in predict)
     Dict(name => make_kernel(C[name]) for name in names)
@@ -104,14 +121,14 @@ end
 
 
 
-export classic_gp
-function classic_gp(ds::DataSet, predict::NTuple, m::Int; ϕ=nothing)
+export local_gp
+function local_gp(ds::DataSet, predict::NTuple, m::Int; ϕ=nothing)
     @unpack Nside, T, Δx = fieldinfo(ds.d)
 
     # Kernels, Covariance Matrices, and Mask
+    predict = parse_predict(predict)
     Ks, Kn = kernel_dict.((ds.Cf, ds.Cn), Ref(predict))
     s, S, N = zeros(T, m), zeros(T, (m,m)), zeros(T, (m,m))
-    mask = make_mask(ds.M)
 
     # Coordinates and Nearest Nearest Neighbors Tree
     X_predict = coords(ds.d)
@@ -124,8 +141,13 @@ function classic_gp(ds::DataSet, predict::NTuple, m::Int; ϕ=nothing)
     Xtree = KDTree(permutedims(float.(X_obs)))
     
     # Local GP Design
-	skip_predicate = (i -> iszero(mask[i]) ? true : false)
-    design_inds(i) = knn(Xtree, X_obs[i, :], m, false, skip_predicate)[1]
+    if ds.M == 1
+        skip_predicate = x -> false
+    else
+        mask = make_mask(ds.M)
+        skip_predicate = (i -> iszero(mask[i]) ? true : false)
+    end
+    design_inds(i) = knn(Xtree, X_obs[i, :], m, true, skip_predicate)[1]
 
     function apply(f::FlatField{P, T, M}) where {P, T, M}
         f_in, f_out = Dict{Symbol, Matrix{T}}(), Dict{Symbol, Matrix{T}}()
@@ -143,12 +165,51 @@ function classic_gp(ds::DataSet, predict::NTuple, m::Int; ϕ=nothing)
                 for (m, kernel) in ((s, Ks), (S, Ks), (N, Kn)) 
                     cov!(m, kernel[Symbol(in, out)], Xj)
                 end
-                f_out[out][i] = ((S + N) \ s) ⋅ f_out[in][js]
+                f_out[out][i] = s ⋅ ((S + N) \ f_in[in][js])
             end
         end
-        f_out
+        (; (p_out => FlatMap{P,T}(f_out[p_out]) for p_out in last.(predict))...)
     end
+    apply
+end
 
+
+
+export full_gp
+function full_gp(ds::DataSet, predict::NTuple; ϕ=nothing)
+    @unpack Nside, T, Δx = fieldinfo(ds.d)
+    Npix = Nside^2
+
+    # Kernels, Covariance Matrices, and Mask
+    predict = parse_predict(predict)
+    Ks, Kn = kernel_dict.((ds.Cf, ds.Cn), Ref(predict))
+    S, N = zeros(T, (Npix, Npix)), zeros(T, (Npix, Npix))
+
+    # Coordinates and Nearest Nearest Neighbors Tree
+    X_predict = coords(ds.d)
+    if ϕ !== nothing
+        αy, αx = getindex.(Map.(∇ * ϕ ./ Δx ), :)
+        X_obs = X_predict .+ [αx αy]
+    else
+        X_obs = X_predict
+    end
+    
+    function apply(f::FlatField{P, T, M}) where {P, T, M}
+        f_in, f_out = Dict{Symbol, Matrix{T}}(), Dict{Symbol, Matrix{T}}()
+        for (p_in, p_out) in predict
+            f_in[p_in] = f[Symbol(string(p_in)*"x")]
+            f_out[p_out] = similar(f_in[p_in])
+        end
+
+        # loop over things we're predicting
+        for (in, out) in predict
+            cov!(S, Ks[Symbol(in, out)], X_obs)
+            cov!(N, Kn[Symbol(in, out)], X_obs)
+            vec(f_out[out]) .= S * (cholesky(Positive, S + N) / f_in[in][:])
+        end
+
+        (; (p_out => FlatMap{P,T}(f_out[p_out]) for p_out in last.(predict))...), S, N
+    end
     apply
 end
 

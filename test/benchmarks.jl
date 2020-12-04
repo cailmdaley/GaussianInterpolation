@@ -1,4 +1,5 @@
 using GaussianInterpolation, CMBLensing
+using GaussianInterpolation: coords, cov!
 using BenchmarkTools
 using BenchmarkTools: TrialEstimate, TrialJudgement
 
@@ -35,19 +36,21 @@ Nside = 32
     θpix=1, Nside=Nside, T=Float64, μKarcminT=6, pol=:I,
 	pixel_mask_kwargs=(num_ptsrcs=10, edge_padding_deg=0));
 
+## 
 X = coords(f)
 x = X[1:1, :]
 K = make_kernel(rand(Nside, Nside))
 out_vec = zeros(m)
 out_mat = zeros(m, m)
 
-suite["cov! vector"] = @benchmarkable @loop cov!($out_vec, $X)
-suite["cov! matrix"] = @benchmarkable @loop cov!($out_mat, $X)
+suite["cov! vector"] = @benchmarkable @loop cov!($out_vec, $K,  $X)
+suite["cov! matrix"] = @benchmarkable @loop cov!($out_mat, $K, $X)
 
-tune!(suite); BenchmarkTools.save("benchmark_params.json", params(suite))
+# tune!(suite); BenchmarkTools.save("benchmark_params.json", params(suite))
 loadparams!(suite, BenchmarkTools.load("benchmark_params.json")[1], :evals, :samples);
 
 results = minimum(run(suite))
+## 
 results_old = BenchmarkTools.load("benchmark.json")[1]
 comparison = judge(results, results_old, time_tolerance = 0.05)
 print_benchmark(comparison, results)
